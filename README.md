@@ -292,6 +292,20 @@ gcloud dns record-sets list \
   --format="table(name, rrdatas)"
 ```
 
+Expected output (all records, including NS/SOA):
+
+```
+NAME                     TYPE  TTL    DATA
+10.10.in-addr.arpa.      NS    21600  ns-gcp-private.googledomains.com.
+10.10.in-addr.arpa.      SOA   21600  ns-gcp-private.googledomains.com. cloud-dns-hostmaster.google.com. 1 21600 3600 259200 300
+6.3.10.10.in-addr.arpa.  PTR   300    test-vm.us-central1-a.c.your-app-project-id.internal.
+7.3.10.10.in-addr.arpa.  PTR   300    test-workbench.us-central1-a.c.your-app-project-id.internal.
+8.3.10.10.in-addr.arpa.  PTR   300    test-ilb.us-central1.your-app-project-id.internal.
+9.3.10.10.in-addr.arpa.  PTR   300    test-xregion-ilb.global.your-app-project-id.internal.
+```
+
+The 4 PTR records correspond to the 4 demo resources (VM, Workbench, regional ILB, cross-region ILB). These are intentionally left stranded after cleanup to demonstrate the delete bug.
+
 ### Cleanup (post-demo)
 
 ```bash
