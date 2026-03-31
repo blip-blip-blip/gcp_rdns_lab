@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GCP Reverse DNS Lab — Architecture</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 960px;
+      margin: 40px auto;
+      padding: 0 24px;
+      background: #fff;
+      color: #24292f;
+    }
+    h1 { font-size: 1.8rem; border-bottom: 1px solid #d0d7de; padding-bottom: 8px; }
+    h2 { font-size: 1.2rem; margin-top: 32px; }
+    .mermaid { background: #f6f8fa; border-radius: 8px; padding: 24px; }
+  </style>
+</head>
+<body>
+  <h1>GCP Reverse DNS Lab</h1>
+  <h2>Architecture</h2>
+
+  <div class="mermaid">
+flowchart TD
+    A["ADC Folder
+(include_children=true)"] -->|aggregated log sink| T
+    B["Common Folder
+(include_children=true)"] -->|aggregated log sink| T
+
+    T["Pub/Sub: rrdns-events
+(host project)"]
+    T -->|"push subscription
+OIDC auth"| CR
+
+    CR["Cloud Run: rrdns-updater
+(us-central1, internal only)"]
+    CR -->|dns.admin| DNS
+
+    DNS["Cloud DNS: nonprod-ptr-zone
+(10.10.in-addr.arpa.)"]
+
+    subgraph events["Captured events"]
+        E1[instances.insert / delete]
+        E2[forwardingRules.insert / delete]
+        E3[globalForwardingRules.insert / delete]
+    end
+
+    E1 & E2 & E3 --> A
+    E1 & E2 & E3 --> B
+  </div>
+
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: 'default' });
+  </script>
+</body>
+</html>

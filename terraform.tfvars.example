@@ -1,0 +1,9 @@
+# Copy this file to terraform.tfvars and fill in your values.
+# terraform.tfvars is gitignored — never commit it.
+
+project_id       = "your-host-project-id"
+vpc_name         = "your-vpc-name"
+region           = "us-central1"
+zone_ip_prefix   = "10.10."
+common_folder_id = "123456789012"   # Numeric folder ID where host project lives
+adc_folder_id    = "123456789013"   # Numeric folder ID where app projects live
