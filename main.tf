@@ -1,18 +1,18 @@
 data "google_compute_network" "vpc_nonprod_shared" {
-  provider = google-beta
+  provider = google
   name     = var.vpc_name
   project  = var.project_id
 }
 
 data "google_compute_subnetwork" "us_central1" {
-  provider = google-beta
+  provider = google
   name     = "us-central1"
   region   = var.region
   project  = var.project_id
 }
 
 resource "google_dns_managed_zone" "ptr_zone" {
-  provider    = google-beta
+  provider = google
   project     = var.project_id
   name        = "nonprod-ptr-zone"
   dns_name    = "10.10.in-addr.arpa."
@@ -37,7 +37,7 @@ resource "google_dns_managed_zone" "ptr_zone" {
 
 # resource "google_dns_record_set" "test_vm_ptr" {
 #   for_each     = local.test_vms
-#   provider     = google-beta
+#   provider = google
 #   project      = var.project_id
 #   managed_zone = google_dns_managed_zone.ptr_zone.name
 #   type         = "PTR"
@@ -47,7 +47,7 @@ resource "google_dns_managed_zone" "ptr_zone" {
 # }
 
 # resource "google_compute_firewall" "allow_iap_ssh" {
-#   provider = google-beta
+#   provider = google
 #   project  = var.project_id
 #   name     = "allow-iap-ssh-test-rrdns"
 #   network  = data.google_compute_network.vpc_nonprod_shared.id
@@ -60,7 +60,7 @@ resource "google_dns_managed_zone" "ptr_zone" {
 # }
 
 # resource "google_compute_instance" "test_rrdns_client" {
-#   provider     = google-beta
+#   provider = google
 #   project      = var.project_id
 #   name         = "test-rrdns-client"
 #   machine_type = "e2-micro"
@@ -78,7 +78,7 @@ resource "google_dns_managed_zone" "ptr_zone" {
 # }
 
 # resource "google_compute_instance" "test_rrdns" {
-#   provider     = google-beta
+#   provider = google
 #   project      = var.project_id
 #   name         = "test-rrdns"
 #   machine_type = "e2-micro"

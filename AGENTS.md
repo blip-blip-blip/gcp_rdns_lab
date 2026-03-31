@@ -76,7 +76,7 @@ gcp_rrdns_lab/
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── main.tf                  # VPC data source, Cloud DNS zone
-├── providers.tf             # google-beta provider (~> 6.0)
+├── providers.tf             # google provider (~> 6.0)
 ├── variables.tf             # project_id, vpc_name, region, zone_ip_prefix, folder IDs
 ├── apis.tf                  # Enables required GCP APIs in host project
 ├── iam.tf                   # Service accounts + IAM bindings (folder-level)

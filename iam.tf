@@ -1,7 +1,7 @@
 # ── Cloud Run service account ────────────────────────────────────────────────
 
 resource "google_service_account" "rrdns_cloudrun" {
-  provider     = google-beta
+  provider = google
   project      = var.project_id
   account_id   = "rrdns-cloudrun-sa"
   display_name = "RRDNS Updater Cloud Run SA"
@@ -9,7 +9,7 @@ resource "google_service_account" "rrdns_cloudrun" {
 
 # DNS admin on host project — to create/delete PTR records
 resource "google_project_iam_member" "rrdns_dns_admin" {
-  provider = google-beta
+  provider = google
   project  = var.project_id
   role     = "roles/dns.admin"
   member   = "serviceAccount:${google_service_account.rrdns_cloudrun.email}"
@@ -18,14 +18,14 @@ resource "google_project_iam_member" "rrdns_dns_admin" {
 # Compute viewer on both folders — to call instances.get / forwardingRules.get
 # across all current and future projects in each folder
 resource "google_folder_iam_member" "rrdns_compute_viewer_common" {
-  provider = google-beta
+  provider = google
   folder   = "folders/${var.common_folder_id}"
   role     = "roles/compute.viewer"
   member   = "serviceAccount:${google_service_account.rrdns_cloudrun.email}"
 }
 
 resource "google_folder_iam_member" "rrdns_compute_viewer_adc" {
-  provider = google-beta
+  provider = google
   folder   = "folders/${var.adc_folder_id}"
   role     = "roles/compute.viewer"
   member   = "serviceAccount:${google_service_account.rrdns_cloudrun.email}"
@@ -34,7 +34,7 @@ resource "google_folder_iam_member" "rrdns_compute_viewer_adc" {
 # ── Pub/Sub push invoker service account ─────────────────────────────────────
 
 resource "google_service_account" "rrdns_pubsub_invoker" {
-  provider     = google-beta
+  provider = google
   project      = var.project_id
   account_id   = "rrdns-pubsub-invoker-sa"
   display_name = "RRDNS Pub/Sub Push Invoker SA"
@@ -42,7 +42,7 @@ resource "google_service_account" "rrdns_pubsub_invoker" {
 
 # Allow the invoker SA to call Cloud Run
 resource "google_cloud_run_v2_service_iam_member" "rrdns_pubsub_invoker" {
-  provider = google-beta
+  provider = google
   project  = var.project_id
   location = google_cloud_run_v2_service.rrdns_updater.location
   name     = google_cloud_run_v2_service.rrdns_updater.name
@@ -52,7 +52,7 @@ resource "google_cloud_run_v2_service_iam_member" "rrdns_pubsub_invoker" {
 
 # Pub/Sub service agent needs token creator on the invoker SA to sign OIDC tokens
 data "google_project" "host" {
-  provider   = google-beta
+  provider = google
   project_id = var.project_id
 }
 

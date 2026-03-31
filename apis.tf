@@ -8,7 +8,7 @@ resource "google_project_service" "host_apis" {
     "iam.googleapis.com",
     "cloudresourcemanager.googleapis.com",
   ])
-  provider           = google-beta
+  provider = google
   project            = var.project_id
   service            = each.value
   disable_on_destroy = false

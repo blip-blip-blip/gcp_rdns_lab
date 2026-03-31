@@ -340,7 +340,7 @@ gcp_rrdns_lab/
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── main.tf              # VPC data sources, DNS zone, test VMs (commented out)
-├── providers.tf         # google-beta provider
+├── providers.tf         # google provider
 ├── variables.tf         # project_id, vpc_name
 ├── apis.tf              # Enables required GCP APIs in host project
 ├── iam.tf               # Service accounts and IAM bindings

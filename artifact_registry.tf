@@ -1,5 +1,5 @@
 resource "google_artifact_registry_repository" "rrdns_updater" {
-  provider      = google-beta
+  provider = google
   project       = var.project_id
   location      = "us-central1"
   repository_id = "rrdns-updater"

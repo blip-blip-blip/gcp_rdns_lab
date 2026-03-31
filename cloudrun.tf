@@ -1,5 +1,5 @@
 resource "google_cloud_run_v2_service" "rrdns_updater" {
-  provider = google-beta
+  provider = google
   project  = var.project_id
   name     = "rrdns-updater"
   location = "us-central1"

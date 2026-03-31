@@ -1,12 +1,12 @@
 resource "google_pubsub_topic" "rrdns_events" {
-  provider = google-beta
+  provider = google
   project  = var.project_id
   name     = "rrdns-events"
 }
 
 # Aggregated folder sink — Common folder (host project lives here)
 resource "google_logging_folder_sink" "rrdns_common" {
-  provider         = google-beta
+  provider = google
   name             = "rrdns-events-sink"
   folder           = "folders/${var.common_folder_id}"
   include_children = true
@@ -20,7 +20,7 @@ resource "google_logging_folder_sink" "rrdns_common" {
 
 # Aggregated folder sink — ADC folder (application projects live here)
 resource "google_logging_folder_sink" "rrdns_adc" {
-  provider         = google-beta
+  provider = google
   name             = "rrdns-events-sink"
   folder           = "folders/${var.adc_folder_id}"
   include_children = true
@@ -34,7 +34,7 @@ resource "google_logging_folder_sink" "rrdns_adc" {
 
 # Grant each sink's writer identity publish access to the topic
 resource "google_pubsub_topic_iam_member" "rrdns_common_sink_publisher" {
-  provider = google-beta
+  provider = google
   project  = var.project_id
   topic    = google_pubsub_topic.rrdns_events.name
   role     = "roles/pubsub.publisher"
@@ -42,7 +42,7 @@ resource "google_pubsub_topic_iam_member" "rrdns_common_sink_publisher" {
 }
 
 resource "google_pubsub_topic_iam_member" "rrdns_adc_sink_publisher" {
-  provider = google-beta
+  provider = google
   project  = var.project_id
   topic    = google_pubsub_topic.rrdns_events.name
   role     = "roles/pubsub.publisher"
@@ -51,7 +51,7 @@ resource "google_pubsub_topic_iam_member" "rrdns_adc_sink_publisher" {
 
 # Push subscription → Cloud Run
 resource "google_pubsub_subscription" "rrdns_push" {
-  provider = google-beta
+  provider = google
   project  = var.project_id
   name     = "rrdns-events-push"
   topic    = google_pubsub_topic.rrdns_events.name
