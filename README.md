@@ -467,6 +467,112 @@ NAME                     TYPE  TTL    DATA
 
 The 4 PTR records correspond to the 4 demo resources (VM, Workbench, regional ILB, cross-region ILB). These are intentionally left stranded after cleanup to demonstrate the delete bug.
 
+### 7. Demo: Managed Reverse Zone vs. Custom Zone
+
+This demonstrates two things:
+1. GCP's managed reverse lookup zone auto-resolves PTR for VMs — no pipeline needed
+2. It does **not** cover Load Balancers — that gap is what `nonprod-ptr-zone` + `rrdns-updater` fills
+3. Workbench PTR records look identical to VM PTR records (Workbench is a Compute Engine VM under the hood)
+
+**Step 1 — Create a VM in the host project on the managed zone subnet:**
+```bash
+gcloud compute instances create test-managed-vm \
+  --project=your-host-project-id --zone=us-central1-a \
+  --machine-type=e2-micro \
+  --subnet=projects/your-host-project-id/regions/us-central1/subnetworks/demo-managed-rrdns-uc1 \
+  --no-address --shielded-secure-boot
+```
+
+**Step 2 — Create a Workbench instance in the app project on the same subnet:**
+```bash
+gcloud workbench instances create test-managed-wb \
+  --project=your-app-project-id --location=us-central1-a \
+  --machine-type=e2-standard-2 \
+  --network=projects/your-host-project-id/global/networks/vpc-nonprod-shared \
+  --subnet=projects/your-host-project-id/regions/us-central1/subnetworks/demo-managed-rrdns-uc1 \
+  --disable-public-ip
+```
+
+> **Note:** The Workbench service agent needs `compute.networkUser` on the subnet:
+> ```bash
+> gcloud compute networks subnets add-iam-policy-binding demo-managed-rrdns-uc1 \
+>   --project=your-host-project-id --region=us-central1 \
+>   --member=serviceAccount:service-WORKBENCH_SA_NUMBER@gcp-sa-notebooks.iam.gserviceaccount.com \
+>   --role=roles/compute.networkUser
+> ```
+
+**Step 3 — Get the IPs:**
+```bash
+gcloud compute instances describe test-managed-vm \
+  --project=your-host-project-id --zone=us-central1-a \
+  --format="value(networkInterfaces[0].networkIP)"
+# e.g. 10.20.0.2
+
+gcloud compute instances describe test-managed-wb \
+  --project=your-app-project-id --zone=us-central1-a \
+  --format="value(networkInterfaces[0].networkIP)"
+# e.g. 10.20.0.3
+```
+
+**Step 4 — Reverse lookup both from inside the VPC:**
+```bash
+gcloud compute ssh test-managed-vm \
+  --project=your-host-project-id --zone=us-central1-a --tunnel-through-iap \
+  --command="python3 -c \"import socket; print('VM PTR:', socket.gethostbyaddr('10.20.0.2')); print('Workbench PTR:', socket.gethostbyaddr('10.20.0.3'))\""
+```
+
+**Observed output (actual test results):**
+```
+VM PTR:        ('test-managed-vm.us-central1-a.c.your-host-project-id.internal', ['test-managed-vm'], ['10.20.0.2'])
+Workbench PTR: ('test-managed-wb.us-central1-a.c.your-app-project-id.internal', [], ['10.20.0.3'])
+```
+
+**Findings:**
+
+| | VM | Workbench |
+|---|---|---|
+| PTR format | `<name>.<zone>.c.<project>.internal.` | `<name>.<zone>.c.<project>.internal.` |
+| Project in FQDN | Host project (where VM was created) | App project (where Workbench was created) |
+| Aliases list | `['test-managed-vm']` | `[]` (empty) |
+| How PTR is created | Managed zone auto-serves via metadata server | Same — Workbench is a plain Compute Engine VM |
+| No pipeline needed | ✓ | ✓ |
+
+Key observations:
+- PTR format is **identical** for VMs and Workbench — Workbench just provisions a Compute Engine VM with the same name
+- The project in the FQDN reflects **where the resource was created**, not which VPC it's on
+- No Cloud Run, no audit log, no Pub/Sub — the managed zone serves records automatically
+- Aliases list is empty for Workbench vs populated for a plain VM (minor, not functionally significant)
+
+**Step 5 — Show the gap: create an ILB and confirm no PTR:**
+```bash
+gcloud compute backend-services create demo-managed-ilb-backend \
+  --project=your-host-project-id --region=us-central1 \
+  --load-balancing-scheme=INTERNAL --protocol=TCP
+
+gcloud compute forwarding-rules create demo-managed-ilb \
+  --project=your-host-project-id --region=us-central1 \
+  --load-balancing-scheme=INTERNAL \
+  --network=vpc-nonprod-shared \
+  --subnet=demo-managed-rrdns-uc1 \
+  --backend-service=demo-managed-ilb-backend --ports=80
+
+# Get ILB IP, then from inside the VM:
+python3 -c "import socket; print(socket.gethostbyaddr('10.20.x.y'))"
+# Returns: socket.herror — no PTR record, managed zone does not cover LBs
+```
+
+This is the gap that `nonprod-ptr-zone` + `rrdns-updater` solves for the `10.10.0.0/16` space.
+
+**Cleanup:**
+```bash
+gcloud compute forwarding-rules delete demo-managed-ilb --project=your-host-project-id --region=us-central1 --quiet
+gcloud compute backend-services delete demo-managed-ilb-backend --project=your-host-project-id --region=us-central1 --quiet
+gcloud compute instances delete test-managed-vm --project=your-host-project-id --zone=us-central1-a --quiet
+gcloud workbench instances delete test-managed-wb --project=your-app-project-id --location=us-central1-a --quiet
+```
+
+---
+
 ### Cleanup (post-demo)
 
 ```bash
