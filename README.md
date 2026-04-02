@@ -55,6 +55,167 @@ flowchart TD
 
 ---
 
+## Design Decisions
+
+### Managed Reverse Zone vs. Custom Zone
+
+GCP provides a built-in managed reverse lookup zone per VPC, but it only covers VM instances. This lab replaces it with a self-managed private Cloud DNS zone driven by event automation.
+
+| Feature | GCP Managed Reverse Zone | Custom Zone (this lab) |
+|---|---|---|
+| Setup | Automatic — no config required | Manual: create zone + event-driven automation |
+| VM PTR records | Auto-created by GCP metadata server | Created by Cloud Run on `instances.insert` |
+| Load Balancer PTR records | **Not supported** | Supported via `forwardingRules.insert` |
+| Workbench PTR records | Auto (VMs under the hood) | Supported (same code path as VMs) |
+| Custom PTR naming | None — fixed GCP format | Full control over naming convention |
+| Cross-project coverage | Per-project, isolated | Folder-level: all projects in the folder |
+| New project onboarding | Automatic | Zero-touch (`include_children=true` on folder sinks) |
+| Record cleanup on delete | Automatic | Cloud Run on `instances/forwardingRules.delete` |
+| Operational complexity | None | Cloud Run service + log sinks required |
+
+#### GCP Managed Reverse Zone flow
+
+```
+  VM created (any project)
+       │
+       ▼
+  GCP Metadata Server ──────────────► Managed Reverse Zone
+  auto-creates PTR record             (auto per-VPC, read-only,
+                                       no customization)
+
+  Load Balancer created
+       │
+       ▼
+  [No PTR record created — managed zone does not cover LBs]
+```
+
+> **GitHub users:** the diagram below renders interactively on github.com
+
+```mermaid
+flowchart TD
+    VM[VM instances.insert\nany project in VPC] --> META[GCP Metadata Server\nauto-creates PTR record]
+    META --> MZ[Managed Reverse Zone\nauto per-VPC, read-only\nno customization]
+
+    LB[Load Balancer created\nforwardingRules.insert] --> GAP[No PTR record created\nmanaged zone does\nnot cover LBs]
+
+    style GAP fill:#c0392b,color:#fff
+    style MZ fill:#2980b9,color:#fff
+```
+
+#### Custom Zone flow (this lab)
+
+```
+  instances.insert / delete         ┐
+  forwardingRules.insert / delete   ├──► Folder Log Sinks ──────────────► Pub/Sub: rrdns-events
+  Workbench instances.*             ┘    (include_children=true)                    │
+                                                                          push sub  │
+                                                                          OIDC auth ▼
+                                                                  Cloud Run: rrdns-updater
+                                                                           │
+                                                                    create / delete PTR
+                                                                           ▼
+                                                                  Cloud DNS: 10.10.in-addr.arpa.
+                                                                  (custom naming, full control)
+```
+
+> **GitHub users:** the diagram below renders interactively on github.com
+
+```mermaid
+flowchart TD
+    VM[VM instances.insert / delete] --> LS
+    LB[Load Balancer forwardingRules.insert / delete] --> LS
+    WB[Workbench instances.insert / delete] --> LS
+
+    LS[Folder Log Sinks\ninclude_children=true]
+    LS -->|aggregated audit logs| PS[Pub/Sub: rrdns-events]
+    PS -->|push + OIDC auth| CR[Cloud Run: rrdns-updater]
+    CR -->|create / delete PTR| DNS[Cloud DNS: 10.10.in-addr.arpa.\ncustom naming, full control]
+
+    style DNS fill:#27ae60,color:#fff
+    style LS fill:#2980b9,color:#fff
+```
+
+---
+
+### Eventarc vs. Pub/Sub + Folder Log Sinks
+
+Eventarc is GCP's native event routing service and a natural first choice for triggering Cloud Run from Compute Engine events. This lab uses folder-level Log Sinks + Pub/Sub instead for org-wide coverage without per-project configuration.
+
+| Feature | Eventarc | Pub/Sub + Folder Log Sinks (this lab) |
+|---|---|---|
+| Trigger scope | Per-project — one trigger per project | Folder-level — one sink covers all projects in the folder |
+| New project onboarding | Manual: create a new Eventarc trigger | Zero-touch: new projects auto-covered by `include_children=true` |
+| Config at scale (N projects) | O(N) triggers to manage | O(1) — two folder sinks regardless of project count |
+| Event buffering & retry | Eventarc handles internally | Pub/Sub: configurable ack deadline, exponential backoff |
+| Message replay | Not supported | Pub/Sub supports replay from snapshot |
+| Delivery to Cloud Run | Direct HTTP push | Push subscription → Cloud Run (OIDC) |
+| Cloud Run ingress needed | Internal or external | Internal only (push subscription uses private path) |
+| Audit log filter control | Per-trigger, per-event-type | Single log filter applied folder-wide |
+| IAM setup | Eventarc SA per project | Single push subscription SA in host project |
+
+#### Eventarc approach
+
+```
+  App Project 1 ──► Eventarc trigger ──┐
+                    (manual setup)      │
+  App Project 2 ──► Eventarc trigger ──┤
+                    (manual setup)      ├──► Cloud Run: rrdns-updater ──► Cloud DNS PTR Zone
+  App Project N ──► Eventarc trigger ──┘
+                    (manual setup)
+
+  New project added ──► [Must manually create a new Eventarc trigger]
+```
+
+> **GitHub users:** the diagram below renders interactively on github.com
+
+```mermaid
+flowchart TD
+    P1[App Project 1\nEventarc trigger] -->|manual setup| CR
+    P2[App Project 2\nEventarc trigger] -->|manual setup| CR
+    PN[App Project N\nEventarc trigger] -->|manual setup| CR
+    NEW[New project added] --> WARN[Must manually create\na new Eventarc trigger]
+
+    CR[Cloud Run: rrdns-updater]
+    CR --> DNS[Cloud DNS PTR Zone]
+
+    style WARN fill:#c0392b,color:#fff
+    style NEW fill:#f39c12,color:#fff
+```
+
+#### Pub/Sub + Folder Log Sinks approach (this lab)
+
+```
+  ADC Folder (include_children=true) ──────────────────────────────────┐
+    └── App Project 1 (auto-covered)                                    │
+    └── App Project 2 (auto-covered)                            Pub/Sub: rrdns-events
+    └── New project added → auto-covered, no action needed              │
+                                                               push sub │
+  Common Folder (include_children=true) ──────────────────────OIDC auth▼
+    └── Host project (auto-covered)                    Cloud Run: rrdns-updater
+                                                                        │
+                                                                        ▼
+                                                           Cloud DNS PTR Zone
+```
+
+> **GitHub users:** the diagram below renders interactively on github.com
+
+```mermaid
+flowchart TD
+    F1[ADC Folder\nYOUR_ADC_FOLDER_ID\ninclude_children=true] -->|one sink, covers all\ncurrent + future projects| PS
+    F2[Common Folder\nYOUR_COMMON_FOLDER_ID\ninclude_children=true] -->|one sink, covers all\ncurrent + future projects| PS
+    NEW[New project added\nto ADC Folder] -->|auto-covered\nno action needed| F1
+
+    PS[Pub/Sub: rrdns-events]
+    PS -->|push + OIDC auth| CR[Cloud Run: rrdns-updater]
+    CR --> DNS[Cloud DNS PTR Zone]
+
+    style NEW fill:#27ae60,color:#fff
+    style F1 fill:#2980b9,color:#fff
+    style F2 fill:#2980b9,color:#fff
+```
+
+---
+
 ## Infrastructure
 
 | Resource | Name | Notes |
