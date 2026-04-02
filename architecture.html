@@ -37,7 +37,7 @@ OIDC auth"| CR
 
     CR["Cloud Run: rrdns-updater
 (us-central1, internal only)"]
-    CR -->|dns.admin| DNS
+    CR -->|"rrdnsDnsRecordSetsManager (custom least-privilege role)"| DNS
 
     DNS["Cloud DNS: nonprod-ptr-zone
 (10.10.in-addr.arpa.)"]

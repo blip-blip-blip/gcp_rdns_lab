@@ -23,7 +23,8 @@ New application projects added to the ADC folder are automatically covered — n
                                                                       Cloud Run: rrdns-updater
                                                                           (internal only)
                                                                                    │
-                                                                              dns.admin
+                                                                     rrdnsDnsRecordSetsManager
+                                                                         (custom least-privilege role)
                                                                                    ▼
                                                                       Cloud DNS: nonprod-ptr-zone
                                                                         (10.10.in-addr.arpa.)
@@ -40,7 +41,7 @@ flowchart TD
     T -->|push subscription\nOIDC auth| CR
 
     CR[Cloud Run: rrdns-updater\nus-central1, internal only]
-    CR -->|dns.admin| DNS
+    CR -->|"rrdnsDnsRecordSetsManager\n(custom least-privilege role)"| DNS
 
     DNS[Cloud DNS: nonprod-ptr-zone\n10.10.in-addr.arpa.]
 
@@ -290,7 +291,7 @@ Example: `my-ilb.us-central1.my-service-project.internal.`
 
 | Component | Detail |
 |---|---|
-| Custom IAM role | `dns.resourceRecordSets.list/delete`, `dns.changes.create/get`, `dns.managedZones.get` — no full `dns.admin` |
+| Custom IAM role | `rrdnsDnsRecordSetsManager` — same least-privilege custom role already used by `rrdns-cloudrun-sa` (reuse or create a separate binding for the reconcile SA) |
 | Dedicated SA | `rrdns-reconcile-sa` — separate from event-handler SA, least privilege |
 | `/reconcile` endpoint | New route on existing `rrdns-updater` Cloud Run service |
 | Cloud Scheduler | Every 6 hours, OIDC auth using reconcile SA |

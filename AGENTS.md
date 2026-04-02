@@ -33,7 +33,7 @@ Pub/Sub topic: rrdns-events  (host project)
     ▼ push subscription, OIDC auth
 Cloud Run: rrdns-updater  (host project, internal ingress only)
     │
-    ▼ dns.admin
+    ▼ rrdnsDnsRecordSetsManager (custom least-privilege role)
 Cloud DNS: nonprod-ptr-zone  (10.10.in-addr.arpa.)
 ```
 
@@ -190,7 +190,7 @@ a type filter and searches by FQDN in memory.
 
 | Service Account | Purpose | Key Permissions |
 |---|---|---|
-| `rrdns-cloudrun-sa` | Runs Cloud Run, calls DNS + Compute APIs | `dns.admin` on host project, `compute.viewer` on both folders |
+| `rrdns-cloudrun-sa` | Runs Cloud Run, calls DNS + Compute APIs | `rrdnsDnsRecordSetsManager` (custom role, record sets only) on host project, `compute.viewer` on both folders |
 | `rrdns-pubsub-invoker-sa` | Authenticates push subscription to Cloud Run | `run.invoker` on Cloud Run service |
 
 The push subscription uses OIDC with `rrdns-pubsub-invoker-sa` as the service account.

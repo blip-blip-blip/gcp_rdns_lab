@@ -7,11 +7,32 @@ resource "google_service_account" "rrdns_cloudrun" {
   display_name = "RRDNS Updater Cloud Run SA"
 }
 
-# DNS admin on host project — to create/delete PTR records
-resource "google_project_iam_member" "rrdns_dns_admin" {
+# Custom least-privilege DNS role — record set management only, no zone admin
+resource "google_project_iam_custom_role" "rrdns_dns_records" {
+  provider    = google
+  project     = var.project_id
+  role_id     = "rrdnsDnsRecordSetsManager"
+  title       = "RRDNS DNS Record Sets Manager"
+  description = "Least-privilege role for creating and deleting PTR records only. No zone create/delete, no DNSSEC, no policy management."
+  permissions = [
+    "dns.changes.create",
+    "dns.changes.get",
+    "dns.changes.list",
+    "dns.managedZones.get",
+    "dns.managedZones.list",
+    "dns.projects.get",
+    "dns.resourceRecordSets.create",
+    "dns.resourceRecordSets.delete",
+    "dns.resourceRecordSets.get",
+    "dns.resourceRecordSets.list",
+    "dns.resourceRecordSets.update",
+  ]
+}
+
+resource "google_project_iam_member" "rrdns_dns_records" {
   provider = google
   project  = var.project_id
-  role     = "roles/dns.admin"
+  role     = google_project_iam_custom_role.rrdns_dns_records.id
   member   = "serviceAccount:${google_service_account.rrdns_cloudrun.email}"
 }
 

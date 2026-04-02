@@ -36,7 +36,7 @@ This file contains high-quality ASCII art versions of the Mermaid diagrams found
                     |  (us-central1, internal)    |
                     +--------------+--------------+
                                    |
-                                   | dns.admin
+                                   | rrdnsDnsRecordSetsManager (custom least-privilege role)
                                    v
                     +-----------------------------+
                     |  Cloud DNS: nonprod-ptr-zone|
