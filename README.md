@@ -627,3 +627,153 @@ gcloud run deploy rrdns-updater \
   --project=your-host-project-id --region=us-central1 \
   --image=us-central1-docker.pkg.dev/your-host-project-id/rrdns-updater/rrdns-updater:latest
 ```
+
+---
+
+## Cost Analysis at Enterprise Scale
+
+This section compares the four viable approaches to PTR automation at the scale of a typical enterprise GCP organization: hundreds of application projects spread across multiple environments and shared VPCs.
+
+### Assumptions
+
+| Parameter | Value |
+|---|---|
+| Application projects | 200–300 (use your actual count) |
+| Environments | 3 (e.g. sandbox / nonprod / prod) |
+| Shared VPCs | Multiple per environment, one per line-of-business |
+| DNS query load | ~2M PTR lookups/month per VPC |
+| Event volume (baseline) | ~5 events/day per project (VM/LB creates + deletes) |
+| Event volume (high) | ~20 events/day per project (active CI/CD) |
+| Event volume (extreme) | ~100 events/day per project (heavy ephemeral automation) |
+
+Adjust these numbers to your organization. The conclusions are robust across a wide range of values because the pipeline cost stays inside GCP free tiers until very high churn.
+
+### Solutions Compared
+
+| ID | Solution |
+|---|---|
+| **A** | GCP Managed Reverse Zone (`reverse_lookup=true`) — auto PTR for VMs, no pipeline required |
+| **B** | Folder Log Sinks + Pub/Sub + Cloud Run *(this repo)* |
+| **C** | Eventarc per-project + Cloud Run |
+| **D** | Hybrid — Managed Zone for VMs, custom zone + filtered sink for LBs only |
+| **E** | Self-hosted DNS (BIND/CoreDNS on GCE HA pair per VPC) |
+
+### GCP Service Pricing Reference
+
+| Service | Free Tier | Paid Rate |
+|---|---|---|
+| Cloud Logging (Admin Activity audit logs) | **Free always** | — |
+| Log sink routing | **Free** | — |
+| Pub/Sub | First 10 GiB/month | $0.04/GiB |
+| Cloud Run — requests | First 2M/month | $0.40/million |
+| Cloud Run — CPU | First 180K vCPU-sec/month | $0.000024/vCPU-sec |
+| Cloud Run — memory | First 360K GiB-sec/month | $0.0000025/GiB-sec |
+| Eventarc | First 100K events/month | $0.40/million |
+| Cloud DNS — zones | — | $0.20/zone/month (first 25) |
+| Cloud DNS — queries (private) | — | $0.40/million |
+| Cloud Scheduler | First 3 jobs/project | $0.10/job/month |
+| GCE e2-small (24/7) | — | ~$12.50/month |
+
+### Monthly Infrastructure Cost Per VPC
+
+Example baseline: 50 projects × 5 events/day = 7,500 events/month per VPC.
+
+| Cost Component | Sol A | Sol B | Sol C | Sol D (Hybrid) | Sol E (GCE) |
+|---|---|---|---|---|---|
+| Log Sinks | — | $0 | — | $0 | — |
+| Pub/Sub | — | $0 | — | $0 | — |
+| Cloud Run | — | $0 | $0 | $0 | — |
+| Eventarc (N triggers) | — | — | $0 | — | — |
+| Cloud DNS zone | $0.20 | $0.20 | $0.20 | $0.40 (2 zones) | $0.20 |
+| DNS queries (2M) | $0.80 | $0.80 | $0.80 | $0.80 | $0.80 |
+| GCE VM pair (HA) | — | — | — | — | ~$50.00 |
+| **Total/VPC/month** | **$1.00** | **$1.00** | **$1.00** | **$1.20** | **~$51.00** |
+| LB PTR coverage | **No** | Yes | Yes | Yes | Yes |
+
+Solutions A, B, C, D all sit inside GCP free tiers at baseline volume. The dominant cost is DNS query charges — not the pipeline.
+
+### Total Monthly Infrastructure Cost (Example: 15 VPCs)
+
+Scaled to 5 lines-of-business × 3 environments = 15 shared VPCs.
+
+| Solution | Baseline | High churn | Extreme churn\* | Annual |
+|---|---|---|---|---|
+| **A — Managed Zone** | $15 | $15 | $15 | **$180** *(LBs uncovered)* |
+| **B — Folder Sinks** | $15 | $15 | ~$32 | **$180–384** |
+| **C — Eventarc** | $15 | $15.30 | ~$34 | **$183–408** |
+| **D — Hybrid** | $18 | $18 | ~$35 | **$216–420** |
+| **E — GCE DNS** | $765 | $765 | $765 | **$9,180** |
+
+> \*Extreme churn: Cloud Run CPU starts billing above free tier. At 100 events/day/project with 5 VPCs sharing 1 Cloud Run per environment → ~750K invocations/env/month → ~195K excess vCPU-seconds → ~$4.68/env. Three environments adds ~$14/month.
+
+### Engineering Hours Comparison
+
+#### Initial Setup
+
+| Solution | Tasks | Estimated Hours |
+|---|---|---|
+| **A — Managed Zone** | Enable per VPC, verify PTR resolution | 4 hrs |
+| **B — Folder Sinks** | Folder sinks, Pub/Sub, Cloud Run, DNS zones, IAM, Terraform | 24 hrs |
+| **C — Eventarc** | Same as B + N Eventarc triggers per env × 3 envs, per-project IAM | 40+ hrs |
+| **D — Hybrid** | Managed zones + filtered sink + Cloud Run for LBs, 2 zones per VPC | 30 hrs |
+| **E — Self-hosted DNS** | HA VM pair setup, DNS config, update scripts, monitoring | 80+ hrs |
+
+#### Ongoing Annual Maintenance
+
+| Solution | Tasks | Hours/Year |
+|---|---|---|
+| **A — Managed Zone** | None — fully managed by GCP | 0 hrs |
+| **B — Folder Sinks** | App updates, occasional Cloud Run redeploy, incident investigation | 8 hrs |
+| **C — Eventarc** | App updates + trigger drift, debugging per-project missing events | 20 hrs |
+| **D — Hybrid** | Same as B + two-zone interaction, suppressing VM events from LB sink | 15 hrs |
+| **E — Self-hosted DNS** | VM patching, DNS config, HA failover testing, on-call coverage | 60+ hrs |
+
+#### New Project Onboarding (per project, across all environments)
+
+| Solution | Action Required | Hours per Project |
+|---|---|---|
+| **A — Managed Zone** | Nothing — automatic | 0 hrs |
+| **B — Folder Sinks** | Nothing — `include_children=true` auto-covers | 0 hrs |
+| **C — Eventarc** | Create one trigger per environment + IAM per project | ~1.5 hrs |
+| **D — Hybrid** | Nothing — same as B | 0 hrs |
+| **E — Self-hosted DNS** | Nothing — DNS servers already running | 0 hrs |
+
+At 25 new projects/year, Solution C adds **~38 hours/year** of recurring onboarding work on top of the initial trigger setup.
+
+### Reconciliation Add-On (Solution B)
+
+The designed `/reconcile` endpoint (see TODO section above) adds negligible cost:
+
+| Component | Cost |
+|---|---|
+| Cloud Scheduler (1 job per env, mostly within free tier) | ~$0.90/month |
+| Cloud Run extra invocations (within free tier) | $0 |
+| Compute API read calls | $0 (read APIs are free) |
+| **Infrastructure total** | **~$0.90/month (~$11/year)** |
+| Implementation effort (one-time) | ~16 hrs |
+
+### Summary: Annual Cost of Ownership
+
+Example: 15 VPCs, 25 new projects/year.
+
+| Solution | Infra/Year | Setup (hrs) | Ongoing (hrs/yr) | Onboarding (hrs/yr) | **Total Hrs Yr 1** |
+|---|---|---|---|---|---|
+| **A — Managed Zone** | $180 | 4 | 0 | 0 | **4 hrs** *(LBs uncovered)* |
+| **B — Folder Sinks** | $180–384 | 24 | 8 | 0 | **32 hrs** |
+| **B + Reconcile** | $192–396 | 40 | 8 | 0 | **48 hrs** |
+| **C — Eventarc** | $183–408 | 40 | 20 | 38 | **98 hrs** |
+| **D — Hybrid** | $216–420 | 30 | 15 | 0 | **45 hrs** |
+| **E — Self-hosted DNS** | $9,180 | 80+ | 60+ | 0 | **140+ hrs** |
+
+### Key Takeaways
+
+**Infrastructure cost is essentially a non-issue across all cloud-native solutions (A/B/C/D).** At enterprise scale you're spending $15–$35/month regardless of which event-driven approach you choose. DNS query charges dominate over pipeline costs, which stay inside GCP free tiers up to very high churn.
+
+**Engineering hours are the real differentiator:**
+
+- **Solution B** is O(1) infrastructure — folder-level sinks cover all projects in a folder permanently, including any future projects. 32 hours to build, 8 hours/year to maintain, 0 hours per new project. Pub/Sub retry and replay semantics also reduce incident surface compared to N independent Eventarc event streams.
+- **Solution C (Eventarc)** has nearly identical infrastructure cost but 3× more engineering hours in year one, and compounds annually with onboarding overhead. At scale you own N triggers × 3 environments Terraform resources, each representing a manual per-project step.
+- **Solution A (Managed Zone)** is the lowest-effort option but is a non-starter if any shared VPC has internal load balancers that need reverse DNS — which every production enterprise VPC does.
+- **Solution E (self-hosted)** is an order of magnitude more expensive in infrastructure and should only exist if you have requirements Cloud DNS cannot satisfy (e.g. DNSSEC for private zones, non-GCP resolver integration).
+
+Adding the reconciliation scheduler to Solution B is ~16 hours of one-time implementation for $11/year — the right follow-on once the event pipeline is in steady state.
